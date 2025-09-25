@@ -41,6 +41,8 @@ use regex::Regex;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
+pub mod registration;
+
 fn generate_canonical_form(input: &str, iso2: &str, callsign_prefixes: &[String]) -> String {
     // Countries where canonical form has NO dash between prefix and suffix
     let no_dash_countries = ["US", "JP", "KR", "TW", "CN", "RU", "BY", "UA", "KZ", "UZ", "KG", "TJ", "TM", "AM", "AZ", "GE", "MD"];
