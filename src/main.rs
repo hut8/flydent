@@ -1,23 +1,48 @@
-use flydent::{Parser, EntityResult};
+use flydent::{EntityResult, Parser};
 use std::collections::HashMap;
 use std::env;
 
 fn entity_result_to_json(result: &EntityResult) -> serde_json::Value {
     match result {
-        EntityResult::Country { nation, description, iso2, iso3, canonical_callsign } => {
+        EntityResult::Country {
+            nation,
+            description,
+            iso2,
+            iso3,
+            canonical_callsign,
+        } => {
             let mut map = std::collections::HashMap::new();
-            map.insert("nation".to_string(), serde_json::Value::String(nation.clone()));
-            map.insert("description".to_string(), serde_json::Value::String(description.clone()));
+            map.insert(
+                "nation".to_string(),
+                serde_json::Value::String(nation.clone()),
+            );
+            map.insert(
+                "description".to_string(),
+                serde_json::Value::String(description.clone()),
+            );
             map.insert("iso2".to_string(), serde_json::Value::String(iso2.clone()));
             map.insert("iso3".to_string(), serde_json::Value::String(iso3.clone()));
-            map.insert("canonical_callsign".to_string(), serde_json::Value::String(canonical_callsign.clone()));
+            map.insert(
+                "canonical_callsign".to_string(),
+                serde_json::Value::String(canonical_callsign.clone()),
+            );
             serde_json::Value::Object(map.into_iter().collect())
         }
-        EntityResult::Organization { name, description, canonical_callsign } => {
+        EntityResult::Organization {
+            name,
+            description,
+            canonical_callsign,
+        } => {
             let mut map = std::collections::HashMap::new();
             map.insert("name".to_string(), serde_json::Value::String(name.clone()));
-            map.insert("description".to_string(), serde_json::Value::String(description.clone()));
-            map.insert("canonical_callsign".to_string(), serde_json::Value::String(canonical_callsign.clone()));
+            map.insert(
+                "description".to_string(),
+                serde_json::Value::String(description.clone()),
+            );
+            map.insert(
+                "canonical_callsign".to_string(),
+                serde_json::Value::String(canonical_callsign.clone()),
+            );
             serde_json::Value::Object(map.into_iter().collect())
         }
     }
@@ -27,7 +52,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: {} [--icao24bit] <callsign1> [callsign2] ...", args[0]);
+        eprintln!(
+            "Usage: {} [--icao24bit] <callsign1> [callsign2] ...",
+            args[0]
+        );
         eprintln!("       {} --help", args[0]);
         std::process::exit(1);
     }
@@ -46,8 +74,14 @@ fn main() {
         println!("    -h, --help         Print help information");
         println!();
         println!("EXAMPLES:");
-        println!("    {} T6ABC N123ABC        Parse aircraft callsigns", args[0]);
-        println!("    {} --icao24bit 700123   Parse ICAO 24-bit identifier", args[0]);
+        println!(
+            "    {} T6ABC N123ABC        Parse aircraft callsigns",
+            args[0]
+        );
+        println!(
+            "    {} --icao24bit 700123   Parse ICAO 24-bit identifier",
+            args[0]
+        );
         return;
     }
 

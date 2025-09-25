@@ -107,11 +107,10 @@ fn canada_to_icao_u32(reg: &str) -> Result<u32, String> {
     if !reg.starts_with('C') {
         return Err("Must start with C".into());
     }
-    let rest = if reg.starts_with("C-") {
-        &reg[2..] // Skip "C-"
-    } else {
-        &reg[1..] // Skip "C"
-    };
+    let rest = reg
+        .strip_prefix("C-")
+        .or_else(|| reg.strip_prefix('C'))
+        .ok_or("Must start with C")?;
     if rest.len() != 4 {
         return Err("Expect C + 4 letters".into());
     }

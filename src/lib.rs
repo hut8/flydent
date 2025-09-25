@@ -37,15 +37,18 @@
 //! }
 //! ```
 
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
-use once_cell::sync::Lazy;
 
 pub mod registration;
 
 fn generate_canonical_form(input: &str, iso2: &str, callsign_prefixes: &[String]) -> String {
     // Countries where canonical form has NO dash between prefix and suffix
-    let no_dash_countries = ["US", "JP", "KR", "TW", "CN", "RU", "BY", "UA", "KZ", "UZ", "KG", "TJ", "TM", "AM", "AZ", "GE", "MD"];
+    let no_dash_countries = [
+        "US", "JP", "KR", "TW", "CN", "RU", "BY", "UA", "KZ", "UZ", "KG", "TJ", "TM", "AM", "AZ",
+        "GE", "MD",
+    ];
 
     if no_dash_countries.contains(&iso2) {
         // These countries canonicalize without dashes
@@ -97,15 +100,18 @@ struct EntityData {
 
 fn parse_python_list(s: &str) -> Vec<String> {
     if s.starts_with('[') && s.ends_with(']') {
-        let inner = &s[1..s.len()-1];
+        let inner = &s[1..s.len() - 1];
         if inner.is_empty() {
             Vec::new()
         } else {
-            inner.split(", ")
+            inner
+                .split(", ")
                 .map(|item| {
                     let item = item.trim();
-                    if (item.starts_with('\'') && item.ends_with('\'')) || (item.starts_with('"') && item.ends_with('"')) {
-                        item[1..item.len()-1].to_string()
+                    if (item.starts_with('\'') && item.ends_with('\''))
+                        || (item.starts_with('"') && item.ends_with('"'))
+                    {
+                        item[1..item.len() - 1].to_string()
                     } else {
                         item.to_string()
                     }
@@ -253,13 +259,11 @@ static ICAO_MAP: Lazy<HashMap<String, usize>> = Lazy::new(|| {
     map
 });
 
-static MIN_CALLSIGN_LEN: Lazy<usize> = Lazy::new(|| {
-    CALLSIGNS_MAP.keys().map(|k| k.len()).min().unwrap_or(0)
-});
+static MIN_CALLSIGN_LEN: Lazy<usize> =
+    Lazy::new(|| CALLSIGNS_MAP.keys().map(|k| k.len()).min().unwrap_or(0));
 
-static MAX_CALLSIGN_LEN: Lazy<usize> = Lazy::new(|| {
-    CALLSIGNS_MAP.keys().map(|k| k.len()).max().unwrap_or(0)
-});
+static MAX_CALLSIGN_LEN: Lazy<usize> =
+    Lazy::new(|| CALLSIGNS_MAP.keys().map(|k| k.len()).max().unwrap_or(0));
 
 pub struct Parser;
 
@@ -289,11 +293,18 @@ impl Parser {
         let mut matches_by_priority: HashMap<i32, Vec<&EntityData>> = HashMap::new();
 
         for data in datasets {
-            let regex_str = if strict { &data.strict_regex } else { &data.regex };
+            let regex_str = if strict {
+                &data.strict_regex
+            } else {
+                &data.regex
+            };
 
             if let Ok(regex) = Regex::new(regex_str) {
                 if regex.is_match(input) {
-                    matches_by_priority.entry(data.priority).or_default().push(data);
+                    matches_by_priority
+                        .entry(data.priority)
+                        .or_default()
+                        .push(data);
                 }
             }
         }
@@ -307,7 +318,10 @@ impl Parser {
 
     fn parse_icao24bit(&self, input: &str, strict: bool) -> Option<Vec<&EntityData>> {
         if strict && !Regex::new(r"^[0-9A-F]{6}$").unwrap().is_match(input) {
-            eprintln!("Warning: ICAO 24bit '{}' must be hexadecimal with length of 6 chars", input);
+            eprintln!(
+                "Warning: ICAO 24bit '{}' must be hexadecimal with length of 6 chars",
+                input
+            );
             return None;
         }
 
@@ -332,7 +346,13 @@ impl Parser {
             if let Some(matches) = self.parse_icao24bit(input, strict) {
                 matches.first().map(|data| {
                     match &data.entity_result {
-                        EntityResult::Country { nation, description, iso2, iso3, .. } => {
+                        EntityResult::Country {
+                            nation,
+                            description,
+                            iso2,
+                            iso3,
+                            ..
+                        } => {
                             let canonical = generate_canonical_form(input, iso2, &data.callsigns);
                             EntityResult::Country {
                                 nation: nation.clone(),
@@ -342,7 +362,9 @@ impl Parser {
                                 canonical_callsign: canonical,
                             }
                         }
-                        EntityResult::Organization { name, description, .. } => {
+                        EntityResult::Organization {
+                            name, description, ..
+                        } => {
                             let canonical = input.to_string(); // Organizations keep input format for now
                             EntityResult::Organization {
                                 name: name.clone(),
@@ -358,7 +380,13 @@ impl Parser {
         } else if let Some(matches) = self.parse_registration(input, strict) {
             matches.first().map(|data| {
                 match &data.entity_result {
-                    EntityResult::Country { nation, description, iso2, iso3, .. } => {
+                    EntityResult::Country {
+                        nation,
+                        description,
+                        iso2,
+                        iso3,
+                        ..
+                    } => {
                         let canonical = generate_canonical_form(input, iso2, &data.callsigns);
                         EntityResult::Country {
                             nation: nation.clone(),
@@ -368,7 +396,9 @@ impl Parser {
                             canonical_callsign: canonical,
                         }
                     }
-                    EntityResult::Organization { name, description, .. } => {
+                    EntityResult::Organization {
+                        name, description, ..
+                    } => {
                         let canonical = input.to_string(); // Organizations keep input format for now
                         EntityResult::Organization {
                             name: name.clone(),
@@ -432,7 +462,11 @@ mod tests {
         // Test with a known callsign prefix
         if let Some(result) = parser.parse_simple("T6ABC") {
             match result {
-                EntityResult::Country { nation, canonical_callsign, .. } => {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
                     assert_eq!(nation, "Afghanistan");
                     assert_eq!(canonical_callsign, "T6-ABC"); // Afghanistan uses dashes in canonical form
                 }
@@ -450,7 +484,13 @@ mod tests {
         // Test Afghanistan callsign T6ABC
         if let Some(result) = parser.parse("T6ABC", false, false) {
             match result {
-                EntityResult::Country { nation, description, iso2, iso3, canonical_callsign } => {
+                EntityResult::Country {
+                    nation,
+                    description,
+                    iso2,
+                    iso3,
+                    canonical_callsign,
+                } => {
                     assert_eq!(nation, "Afghanistan");
                     assert_eq!(description, "general");
                     assert_eq!(iso2, "AF");
@@ -466,7 +506,11 @@ mod tests {
         // Test organization callsign 4Y123
         if let Some(result) = parser.parse("4Y123", false, false) {
             match result {
-                EntityResult::Organization { name, description, canonical_callsign } => {
+                EntityResult::Organization {
+                    name,
+                    description,
+                    canonical_callsign,
+                } => {
                     assert_eq!(name, "International Civil Aviation Organization");
                     assert_eq!(description, "general");
                     assert_eq!(canonical_callsign, "4Y123");
@@ -480,7 +524,13 @@ mod tests {
         // Test ICAO 24-bit identifier 700123
         if let Some(result) = parser.parse("700123", false, true) {
             match result {
-                EntityResult::Country { nation, description, iso2, iso3, canonical_callsign } => {
+                EntityResult::Country {
+                    nation,
+                    description,
+                    iso2,
+                    iso3,
+                    canonical_callsign,
+                } => {
                     assert_eq!(nation, "Afghanistan");
                     assert_eq!(description, "general");
                     assert_eq!(iso2, "AF");
@@ -504,7 +554,11 @@ mod tests {
         // Test US callsign: canonical form removes dashes
         if let Some(result) = parser.parse("N-8437D", false, false) {
             match result {
-                EntityResult::Country { nation, canonical_callsign, .. } => {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
                     assert_eq!(nation, "United States");
                     assert_eq!(canonical_callsign, "N8437D"); // Dash removed for US canonical form
                 }
@@ -517,7 +571,11 @@ mod tests {
         // Test US callsign without dash should stay the same
         if let Some(result) = parser.parse("N8437D", false, false) {
             match result {
-                EntityResult::Country { nation, canonical_callsign, .. } => {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
                     assert_eq!(nation, "United States");
                     assert_eq!(canonical_callsign, "N8437D"); // Already canonical
                 }
@@ -530,7 +588,11 @@ mod tests {
         // Test Canadian callsign: canonical form includes dash after prefix
         if let Some(result) = parser.parse("CFAAA", false, false) {
             match result {
-                EntityResult::Country { nation, canonical_callsign, .. } => {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
                     assert_eq!(nation, "Canada");
                     assert_eq!(canonical_callsign, "C-FAAA"); // Dash added for Canadian canonical form
                 }
@@ -543,7 +605,11 @@ mod tests {
         // Test Canadian callsign with dash should stay the same
         if let Some(result) = parser.parse("C-FAAA", false, false) {
             match result {
-                EntityResult::Country { nation, canonical_callsign, .. } => {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
                     assert_eq!(nation, "Canada");
                     assert_eq!(canonical_callsign, "C-FAAA"); // Already canonical
                 }
