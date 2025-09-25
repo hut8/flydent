@@ -88,6 +88,15 @@ pub enum EntityResult {
     },
 }
 
+impl EntityResult {
+    pub fn canonical_callsign(&self) -> &String {
+        match self {
+            EntityResult::Country { canonical_callsign, .. } => canonical_callsign,
+            EntityResult::Organization { canonical_callsign, .. } => canonical_callsign,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct EntityData {
     entity_result: EntityResult,
