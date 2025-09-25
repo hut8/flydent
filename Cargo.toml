@@ -2,6 +2,11 @@
 name = "flydent"
 version = "0.1.0"
 edition = "2021"
+description = "A tool for processing aircraft callsigns and ITU data"
+license = "MIT"
+repository = "https://github.com/hut8/flydent"
+homepage = "https://github.com/hut8/flydent"
+documentation = "https://docs.rs/flydent"
 
 [[bin]]
 name = "flydent"
