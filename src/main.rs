@@ -4,18 +4,20 @@ use std::env;
 
 fn entity_result_to_json(result: &EntityResult) -> serde_json::Value {
     match result {
-        EntityResult::Country { nation, description, iso2, iso3 } => {
+        EntityResult::Country { nation, description, iso2, iso3, canonical_callsign } => {
             let mut map = std::collections::HashMap::new();
             map.insert("nation".to_string(), serde_json::Value::String(nation.clone()));
             map.insert("description".to_string(), serde_json::Value::String(description.clone()));
             map.insert("iso2".to_string(), serde_json::Value::String(iso2.clone()));
             map.insert("iso3".to_string(), serde_json::Value::String(iso3.clone()));
+            map.insert("canonical_callsign".to_string(), serde_json::Value::String(canonical_callsign.clone()));
             serde_json::Value::Object(map.into_iter().collect())
         }
-        EntityResult::Organization { name, description } => {
+        EntityResult::Organization { name, description, canonical_callsign } => {
             let mut map = std::collections::HashMap::new();
             map.insert("name".to_string(), serde_json::Value::String(name.clone()));
             map.insert("description".to_string(), serde_json::Value::String(description.clone()));
+            map.insert("canonical_callsign".to_string(), serde_json::Value::String(canonical_callsign.clone()));
             serde_json::Value::Object(map.into_iter().collect())
         }
     }
