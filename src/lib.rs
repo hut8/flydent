@@ -43,6 +43,14 @@ use std::collections::HashMap;
 
 pub mod registration;
 
+fn normalize_dashes(input: &str) -> String {
+    // Convert common non-ASCII dash characters to ASCII hyphen-minus
+    input
+        .replace('–', "-")  // en dash (U+2013)
+        .replace('—', "-")  // em dash (U+2014)
+        .replace('−', "-")  // minus sign (U+2212)
+}
+
 fn generate_canonical_form(input: &str, iso2: &str, callsign_prefixes: &[String]) -> String {
     // Countries where canonical form has NO dash between prefix and suffix
     let no_dash_countries = [
@@ -351,8 +359,10 @@ impl Parser {
     }
 
     pub fn parse(&self, input: &str, strict: bool, icao24bit: bool) -> Option<EntityResult> {
+        let normalized_input = normalize_dashes(input);
+
         if icao24bit {
-            if let Some(matches) = self.parse_icao24bit(input, strict) {
+            if let Some(matches) = self.parse_icao24bit(&normalized_input, strict) {
                 matches.first().map(|data| {
                     match &data.entity_result {
                         EntityResult::Country {
@@ -362,7 +372,7 @@ impl Parser {
                             iso3,
                             ..
                         } => {
-                            let canonical = generate_canonical_form(input, iso2, &data.callsigns);
+                            let canonical = generate_canonical_form(&normalized_input, iso2, &data.callsigns);
                             EntityResult::Country {
                                 nation: nation.clone(),
                                 description: description.clone(),
@@ -374,7 +384,7 @@ impl Parser {
                         EntityResult::Organization {
                             name, description, ..
                         } => {
-                            let canonical = input.to_string(); // Organizations keep input format for now
+                            let canonical = normalized_input.to_string(); // Organizations keep normalized format
                             EntityResult::Organization {
                                 name: name.clone(),
                                 description: description.clone(),
@@ -386,7 +396,7 @@ impl Parser {
             } else {
                 None
             }
-        } else if let Some(matches) = self.parse_registration(input, strict) {
+        } else if let Some(matches) = self.parse_registration(&normalized_input, strict) {
             matches.first().map(|data| {
                 match &data.entity_result {
                     EntityResult::Country {
@@ -396,7 +406,7 @@ impl Parser {
                         iso3,
                         ..
                     } => {
-                        let canonical = generate_canonical_form(input, iso2, &data.callsigns);
+                        let canonical = generate_canonical_form(&normalized_input, iso2, &data.callsigns);
                         EntityResult::Country {
                             nation: nation.clone(),
                             description: description.clone(),
@@ -408,7 +418,7 @@ impl Parser {
                     EntityResult::Organization {
                         name, description, ..
                     } => {
-                        let canonical = input.to_string(); // Organizations keep input format for now
+                        let canonical = normalized_input.to_string(); // Organizations keep normalized format
                         EntityResult::Organization {
                             name: name.clone(),
                             description: description.clone(),
@@ -554,6 +564,66 @@ mod tests {
 
         // Test non-existent callsign should return None
         assert!(parser.parse("N123ABC", false, false).is_none());
+    }
+
+    #[test]
+    fn test_german_callsign_d_ekqm() {
+        let parser = Parser::new();
+
+        // Test German callsign D-EKQM (with ASCII dash)
+        if let Some(result) = parser.parse("D-EKQM", false, false) {
+            match result {
+                EntityResult::Country {
+                    nation,
+                    iso2,
+                    canonical_callsign,
+                    ..
+                } => {
+                    assert_eq!(nation, "Germany");
+                    assert_eq!(iso2, "DE");
+                    assert_eq!(canonical_callsign, "D-EKQM"); // Germany uses dashes in canonical form
+                }
+                _ => panic!("Expected country result for D-EKQM"),
+            }
+        } else {
+            panic!("D-EKQM should match Germany");
+        }
+
+        // Test German callsign D–EKQM (with en-dash) - should be normalized to ASCII dash
+        if let Some(result) = parser.parse("D–EKQM", false, false) {
+            match result {
+                EntityResult::Country {
+                    nation,
+                    iso2,
+                    canonical_callsign,
+                    ..
+                } => {
+                    assert_eq!(nation, "Germany");
+                    assert_eq!(iso2, "DE");
+                    assert_eq!(canonical_callsign, "D-EKQM"); // Normalized to ASCII dash
+                }
+                _ => panic!("Expected country result for D–EKQM"),
+            }
+        } else {
+            panic!("D–EKQM should match Germany after normalization");
+        }
+
+        // Test without dash - should add dash for German canonical form
+        if let Some(result) = parser.parse("DEKQM", false, false) {
+            match result {
+                EntityResult::Country {
+                    nation,
+                    canonical_callsign,
+                    ..
+                } => {
+                    assert_eq!(nation, "Germany");
+                    assert_eq!(canonical_callsign, "D-EKQM"); // Dash added for German canonical form
+                }
+                _ => panic!("Expected country result for DEKQM"),
+            }
+        } else {
+            panic!("DEKQM should match Germany");
+        }
     }
 
     #[test]
