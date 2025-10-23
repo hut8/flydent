@@ -45,10 +45,7 @@ pub mod registration;
 
 fn normalize_dashes(input: &str) -> String {
     // Convert common non-ASCII dash characters to ASCII hyphen-minus
-    input
-        .replace('–', "-")  // en dash (U+2013)
-        .replace('—', "-")  // em dash (U+2014)
-        .replace('−', "-")  // minus sign (U+2212)
+    input.replace(['–', '—', '−'], "-") // minus sign (U+2212)
 }
 
 fn generate_canonical_form(input: &str, iso2: &str, callsign_prefixes: &[String]) -> String {
@@ -99,8 +96,12 @@ pub enum EntityResult {
 impl EntityResult {
     pub fn canonical_callsign(&self) -> &String {
         match self {
-            EntityResult::Country { canonical_callsign, .. } => canonical_callsign,
-            EntityResult::Organization { canonical_callsign, .. } => canonical_callsign,
+            EntityResult::Country {
+                canonical_callsign, ..
+            } => canonical_callsign,
+            EntityResult::Organization {
+                canonical_callsign, ..
+            } => canonical_callsign,
         }
     }
 }
@@ -372,7 +373,8 @@ impl Parser {
                             iso3,
                             ..
                         } => {
-                            let canonical = generate_canonical_form(&normalized_input, iso2, &data.callsigns);
+                            let canonical =
+                                generate_canonical_form(&normalized_input, iso2, &data.callsigns);
                             EntityResult::Country {
                                 nation: nation.clone(),
                                 description: description.clone(),
@@ -406,7 +408,8 @@ impl Parser {
                         iso3,
                         ..
                     } => {
-                        let canonical = generate_canonical_form(&normalized_input, iso2, &data.callsigns);
+                        let canonical =
+                            generate_canonical_form(&normalized_input, iso2, &data.callsigns);
                         EntityResult::Country {
                             nation: nation.clone(),
                             description: description.clone(),
