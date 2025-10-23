@@ -1,167 +1,206 @@
-/// ICAO <-> Registration (US "N", Canada "C")
+/// ICAO <-> Registration (US "N")
 ///
-/// - US block: 0xA00001 ..= 0xADF669
-/// - Canada block: 0xC00001 ..= 0xC0CDF8
+/// - US block: 0xA00001 ..= 0xADF7C7
 ///
 /// ICAO identifiers represented as [u8; 3], big-endian.
-use std::num::ParseIntError;
+///
+/// This implementation is based on the algorithm from:
+/// https://github.com/guillaumemichel/icao-nnumber_converter
+/// Copyright (c) Guillaume Michel, licensed under GPLv3
 
 const US_BASE: u32 = 0xA00000;
-const US_MAX: u32 = 0xADF669;
-const CA_BASE: u32 = 0xC00000;
-const CA_MAX: u32 = 0xC0CDF8;
-const CA_BLOCKS: [char; 4] = ['F', 'G', 'H', 'I'];
-const SKIP_CG: bool = true;
+const US_MAX: u32 = 0xADF7C7;
+
+// Charset excludes 'I' and 'O' to avoid confusion with digits
+const CHARSET: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const ALLCHARS: &str = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
+
+// Bucket sizes for the tail number algorithm
+const SUFFIX_SIZE: u32 = 1 + 24 * (1 + 24); // 601
+const BUCKET4_SIZE: u32 = 1 + 24 + 10; // 35
+const BUCKET3_SIZE: u32 = 10 * BUCKET4_SIZE + SUFFIX_SIZE; // 951
+const BUCKET2_SIZE: u32 = 10 * BUCKET3_SIZE + SUFFIX_SIZE; // 10111
+const BUCKET1_SIZE: u32 = 10 * BUCKET2_SIZE + SUFFIX_SIZE; // 101711
 
 fn u32_to_arr3(x: u32) -> [u8; 3] {
     [(x >> 16) as u8, (x >> 8) as u8, x as u8]
 }
+
 fn arr3_to_u32(a: [u8; 3]) -> u32 {
     ((a[0] as u32) << 16) | ((a[1] as u32) << 8) | (a[2] as u32)
 }
-fn letter_index(c: char) -> Option<u32> {
-    if c.is_ascii_uppercase() {
-        Some((c as u8 - b'A') as u32)
-    } else {
-        None
+
+/// Get the suffix string for a given offset (0-600)
+/// 0 -> ''
+/// 1 -> 'A'
+/// 2 -> 'AA'
+/// 3 -> 'AB'
+/// ...
+/// 600 -> 'ZZ'
+fn get_suffix(offset: u32) -> String {
+    if offset == 0 {
+        return String::new();
     }
+    let char0_idx = ((offset - 1) / 25) as usize;
+    let rem = (offset - 1) % 25;
+    let char0 = CHARSET.chars().nth(char0_idx).unwrap();
+    if rem == 0 {
+        return char0.to_string();
+    }
+    let char1 = CHARSET.chars().nth((rem - 1) as usize).unwrap();
+    format!("{}{}", char0, char1)
 }
 
-// === US implementation ===
-fn us_n_to_icao_u32(reg: &str) -> Result<u32, String> {
-    let reg = reg.trim().to_ascii_uppercase();
-    let mut chars = reg.chars();
-    if chars.next() != Some('N') {
+/// Get the offset for a given suffix string
+/// Reverse of get_suffix()
+fn suffix_offset(s: &str) -> Option<u32> {
+    if s.is_empty() {
+        return Some(0);
+    }
+    if s.len() > 2 {
+        return None;
+    }
+
+    let chars: Vec<char> = s.chars().collect();
+    let idx0 = CHARSET.find(chars[0])?;
+    let mut count = (25 * idx0 + 1) as u32;
+
+    if chars.len() == 2 {
+        let idx1 = CHARSET.find(chars[1])?;
+        count += (idx1 + 1) as u32;
+    }
+
+    Some(count)
+}
+
+/// Convert a US N-Number to ICAO address (u32)
+fn us_n_to_icao_u32(nnumber: &str) -> Result<u32, String> {
+    let nnumber = nnumber.trim().to_ascii_uppercase();
+
+    // Must start with 'N'
+    if !nnumber.starts_with('N') {
         return Err("Must start with N".into());
     }
-    let body: String = chars.collect();
 
-    let mut digits = String::new();
-    let mut letters = String::new();
-    for ch in body.chars() {
-        if ch.is_ascii_digit() && letters.is_empty() {
-            digits.push(ch);
-        } else if ch.is_ascii_alphabetic() {
-            letters.push(ch);
+    if nnumber.len() > 6 {
+        return Err("N-Number too long (max 6 chars)".into());
+    }
+
+    // Verify all characters are valid
+    for c in nnumber.chars() {
+        if !ALLCHARS.contains(c) {
+            return Err(format!("Invalid character: {}", c));
+        }
+    }
+
+    // Verify format: no letters in the middle (only at end)
+    if nnumber.len() > 3 {
+        let chars: Vec<char> = nnumber.chars().collect();
+        for i in 1..(nnumber.len() - 2) {
+            if CHARSET.contains(chars[i]) {
+                return Err("Letters can only appear as suffix".into());
+            }
+        }
+    }
+
+    let mut count = 1u32; // Start at 1 (N1 = a00001)
+
+    if nnumber.len() == 1 {
+        // Just "N" = a00001
+        return Ok(US_BASE + count);
+    }
+
+    let rest = &nnumber[1..];
+    let chars: Vec<char> = rest.chars().collect();
+
+    for i in 0..chars.len() {
+        let c = chars[i];
+
+        if i == 4 {
+            // Last possible character (position 5 in N-Number, position 4 in rest)
+            let idx = ALLCHARS.find(c).ok_or("Invalid character")?;
+            count += (idx + 1) as u32;
+            break;
+        } else if CHARSET.contains(c) {
+            // First alphabetical character - this is the suffix
+            let suffix = &rest[i..];
+            count += suffix_offset(suffix).ok_or("Invalid suffix")?;
+            break;
         } else {
-            return Err(format!("Invalid char {}", ch));
+            // Digit
+            let digit = c.to_digit(10).ok_or("Invalid digit")?;
+            match i {
+                0 => count += (digit - 1) * BUCKET1_SIZE,
+                1 => count += digit * BUCKET2_SIZE + SUFFIX_SIZE,
+                2 => count += digit * BUCKET3_SIZE + SUFFIX_SIZE,
+                3 => count += digit * BUCKET4_SIZE + SUFFIX_SIZE,
+                _ => return Err("N-Number format error".into()),
+            }
         }
     }
-    let numeric: u32 = digits
-        .parse::<u32>()
-        .map_err(|e: ParseIntError| e.to_string())?;
-    if !(1..=999).contains(&numeric) {
-        return Err("Numeric part out of range (1–999)".into());
-    }
 
-    let per_block = 1 + 26 + 26 * 26;
-    let numeric_block_index = (numeric - 1) * per_block;
-
-    let suffix_offset: u32 = match letters.len() {
-        0 => 0,
-        1 => 1 + letter_index(letters.chars().next().unwrap()).ok_or("bad suffix")?,
-        2 => {
-            let a = letter_index(letters.chars().next().unwrap()).ok_or("bad suffix")?;
-            let b = letter_index(letters.chars().nth(1).unwrap()).ok_or("bad suffix")?;
-            1 + 26 + a * 26 + b
-        }
-        _ => return Err("Suffix too long".into()),
-    };
-
-    let index = numeric_block_index + suffix_offset + 1;
-    let icao = US_BASE + index;
+    let icao = US_BASE + count;
     if icao > US_MAX {
         return Err("Out of US range".into());
     }
+
     Ok(icao)
 }
 
+/// Convert ICAO address (u32) to US N-Number
 fn icao_u32_to_us(icao: u32) -> Result<String, String> {
     if !(US_BASE + 1..=US_MAX).contains(&icao) {
         return Err("Not in US allocation".into());
     }
-    let idx = icao - US_BASE;
-    let per_block = 1 + 26 + 26 * 26;
-    let idx0 = idx - 1;
-    let num_block = idx0 / per_block;
-    let intra = idx0 % per_block;
 
-    let numeric = num_block + 1;
-    let reg = if intra == 0 {
-        format!("N{}", numeric)
-    } else if intra <= 26 {
-        let l = (b'A' + (intra - 1) as u8) as char;
-        format!("N{}{}", numeric, l)
-    } else {
-        let two = intra - 1 - 26;
-        let a = (two / 26) as u8;
-        let b = (two % 26) as u8;
-        format!("N{}{}{}", numeric, (b'A' + a) as char, (b'A' + b) as char)
-    };
-    Ok(reg)
-}
+    let i = icao - US_BASE - 1;
+    let mut output = String::from("N");
 
-// === Canada implementation ===
-fn canada_to_icao_u32(reg: &str) -> Result<u32, String> {
-    let reg = reg.trim().to_ascii_uppercase();
-    if !reg.starts_with('C') {
-        return Err("Must start with C".into());
-    }
-    let rest = reg
-        .strip_prefix("C-")
-        .or_else(|| reg.strip_prefix('C'))
-        .ok_or("Must start with C")?;
-    if rest.len() != 4 {
-        return Err("Expect C + 4 letters".into());
-    }
-    let mut it = rest.chars();
-    let block = it.next().unwrap();
-    if SKIP_CG && block == 'G' {
-        return Err("CG skipped".into());
-    }
-    let idx_block = CA_BLOCKS
-        .iter()
-        .position(|&b| b == block)
-        .ok_or("Bad block")?;
-    let a = letter_index(it.next().unwrap()).ok_or("bad A")?;
-    let b = letter_index(it.next().unwrap()).ok_or("bad B")?;
-    let c = letter_index(it.next().unwrap()).ok_or("bad C")?;
-    let per_block = 26 * 26 * 26;
-    let three_index = a * 26 * 26 + b * 26 + c;
-    let index = (idx_block as u32) * per_block + three_index + 1;
-    let icao = CA_BASE + index;
-    if icao > CA_MAX {
-        return Err("Out of Canada range".into());
-    }
-    Ok(icao)
-}
+    // Digit 1
+    let dig1 = i / BUCKET1_SIZE + 1;
+    let mut rem = i % BUCKET1_SIZE;
+    output.push_str(&dig1.to_string());
 
-fn icao_u32_to_canada(icao: u32) -> Result<String, String> {
-    if !(CA_BASE + 1..=CA_MAX).contains(&icao) {
-        return Err("Not in Canada allocation".into());
+    if rem < SUFFIX_SIZE {
+        return Ok(output + &get_suffix(rem));
     }
-    let idx = icao - CA_BASE;
-    let per_block = 26 * 26 * 26;
-    let index0 = idx - 1;
-    let block_idx = (index0 / per_block) as usize;
-    if block_idx >= CA_BLOCKS.len() {
-        return Err("Block out of range".into());
+
+    // Digit 2
+    rem -= SUFFIX_SIZE;
+    let dig2 = rem / BUCKET2_SIZE;
+    rem = rem % BUCKET2_SIZE;
+    output.push_str(&dig2.to_string());
+
+    if rem < SUFFIX_SIZE {
+        return Ok(output + &get_suffix(rem));
     }
-    let block = CA_BLOCKS[block_idx];
-    if SKIP_CG && block == 'G' {
-        return Err("CG skipped".into());
+
+    // Digit 3
+    rem -= SUFFIX_SIZE;
+    let dig3 = rem / BUCKET3_SIZE;
+    rem = rem % BUCKET3_SIZE;
+    output.push_str(&dig3.to_string());
+
+    if rem < SUFFIX_SIZE {
+        return Ok(output + &get_suffix(rem));
     }
-    let three = index0 % per_block;
-    let a = (three / (26 * 26)) as u8;
-    let b = ((three / 26) % 26) as u8;
-    let c = (three % 26) as u8;
-    Ok(format!(
-        "C-{}{}{}{}",
-        block,
-        (b'A' + a) as char,
-        (b'A' + b) as char,
-        (b'A' + c) as char
-    ))
+
+    // Digit 4
+    rem -= SUFFIX_SIZE;
+    let dig4 = rem / BUCKET4_SIZE;
+    rem = rem % BUCKET4_SIZE;
+    output.push_str(&dig4.to_string());
+
+    if rem == 0 {
+        return Ok(output);
+    }
+
+    // Last character
+    let last_char = ALLCHARS.chars().nth((rem - 1) as usize)
+        .ok_or("Invalid last character")?;
+    output.push(last_char);
+
+    Ok(output)
 }
 
 // === Public API ===
@@ -169,10 +208,8 @@ fn icao_u32_to_canada(icao: u32) -> Result<String, String> {
 pub fn registration_to_icao(reg: &str) -> Result<[u8; 3], String> {
     if reg.starts_with('N') {
         us_n_to_icao_u32(reg).map(u32_to_arr3)
-    } else if reg.starts_with('C') {
-        canada_to_icao_u32(reg).map(u32_to_arr3)
     } else {
-        Err("Unsupported registration prefix".into())
+        Err("Unsupported registration prefix (only US 'N' supported)".into())
     }
 }
 
@@ -180,10 +217,8 @@ pub fn icao_to_registration(icao: [u8; 3]) -> Result<String, String> {
     let icao_u32 = arr3_to_u32(icao);
     if (US_BASE + 1..=US_MAX).contains(&icao_u32) {
         icao_u32_to_us(icao_u32)
-    } else if (CA_BASE + 1..=CA_MAX).contains(&icao_u32) {
-        icao_u32_to_canada(icao_u32)
     } else {
-        Err("ICAO not in US or Canada range".into())
+        Err("ICAO not in US range".into())
     }
 }
 
@@ -199,54 +234,41 @@ mod tests {
     }
 
     #[test]
-    fn ca_roundtrip() {
-        let reg = "CFAAA";
+    fn us_icao_to_registration_ab8e4f() {
+        // Convert ICAO code AB8E4F to registration N8437D
+        let icao = [0xAB, 0x8E, 0x4F];
+        let reg = icao_to_registration(icao).unwrap();
+        assert_eq!(reg, "N8437D");
+    }
+
+    #[test]
+    fn us_registration_to_icao_n8437d() {
+        // Convert registration N8437D to ICAO code AB8E4F
+        let reg = "N8437D";
         let icao = registration_to_icao(reg).unwrap();
-        assert_eq!(icao_to_registration(icao).unwrap(), "C-FAAA");
-    }
-
-    #[test]
-    fn ca_icao_to_canonical_format() {
-        // Test CF block (first block)
-        let icao_cf = registration_to_icao("CFAAA").unwrap();
-        assert_eq!(icao_to_registration(icao_cf).unwrap(), "C-FAAA");
-
-        // Test CH block (third block, skipping CG)
-        let icao_ch = registration_to_icao("CHAAA").unwrap();
-        assert_eq!(icao_to_registration(icao_ch).unwrap(), "C-HAAA");
-
-        // Test with different letter combinations
-        let icao_cf_xyz = registration_to_icao("CFXYZ").unwrap();
-        assert_eq!(icao_to_registration(icao_cf_xyz).unwrap(), "C-FXYZ");
-    }
-
-    #[test]
-    fn ca_24bit_icao_direct_conversion() {
-        // Test direct conversion from 24-bit ICAO codes
-        // CF block starts at CA_BASE + 1 = 0xC00001
-        let cf_aaa_icao = [0xC0, 0x00, 0x01]; // First Canadian ICAO (CFAAA)
-        assert_eq!(icao_to_registration(cf_aaa_icao).unwrap(), "C-FAAA");
-
-        // Test a few positions into the CF block
-        let cf_abc_icao = registration_to_icao("CFABC").unwrap();
-        assert_eq!(icao_to_registration(cf_abc_icao).unwrap(), "C-FABC");
-    }
-
-    #[test]
-    fn ca_input_formats() {
-        // Test that both "CFAAA" and "C-FAAA" input formats work
-        let icao1 = registration_to_icao("CFAAA").unwrap();
-        let icao2 = registration_to_icao("C-FAAA").unwrap();
-        assert_eq!(icao1, icao2);
-
-        // Both should convert to canonical format with dash
-        assert_eq!(icao_to_registration(icao1).unwrap(), "C-FAAA");
-        assert_eq!(icao_to_registration(icao2).unwrap(), "C-FAAA");
+        assert_eq!(icao, [0xAB, 0x8E, 0x4F]);
     }
 
     #[test]
     fn reject_other() {
         assert!(registration_to_icao("G-ABCD").is_err());
         assert!(icao_to_registration([0x00, 0x12, 0x34]).is_err());
+    }
+
+    #[test]
+    fn test_n1() {
+        // N1 should be the first valid registration
+        let icao = registration_to_icao("N1").unwrap();
+        assert_eq!(icao, [0xA0, 0x00, 0x01]);
+        assert_eq!(icao_to_registration(icao).unwrap(), "N1");
+    }
+
+    #[test]
+    fn test_n99999() {
+        // N99999 should be the last valid registration
+        let reg = "N99999";
+        let icao = registration_to_icao(reg).unwrap();
+        assert_eq!(icao, [0xAD, 0xF7, 0xC7]);
+        assert_eq!(icao_to_registration(icao).unwrap(), reg);
     }
 }
