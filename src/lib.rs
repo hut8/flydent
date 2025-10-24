@@ -41,6 +41,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 
+pub mod icao;
 pub mod registration;
 
 fn normalize_dashes(input: &str) -> String {
